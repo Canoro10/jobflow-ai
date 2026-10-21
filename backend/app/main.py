@@ -1,10 +1,15 @@
 from fastapi import FastAPI
 
+from app.routers.jobs import router as jobs_router
+
 
 app = FastAPI(
     title="JobFlow AI API",
     version="0.1.0",
 )
+
+
+app.include_router(jobs_router)
 
 
 @app.get("/health")
