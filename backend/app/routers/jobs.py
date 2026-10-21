@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.schemas.job import JobCreate, JobResponse
 
@@ -27,3 +27,13 @@ async def create_job(job: JobCreate):
 async def get_jobs():
     return jobs
 
+@router.get("/{job_id}", response_model=JobResponse)
+async def get_job(job_id: int):
+    for job in jobs:
+        if job.id == job_id:
+            return job
+
+    raise HTTPException(
+        status_code=404,
+        detail="Job not found",
+    )
