@@ -22,3 +22,8 @@ async def create_job(job: JobCreate):
     jobs.append(new_job)
 
     return new_job
+
+@router.get("/", response_model=list[JobResponse])
+async def get_jobs():
+    return jobs
+
