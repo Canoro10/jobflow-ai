@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas.job import JobCreate, JobResponse
 
@@ -23,9 +25,35 @@ async def create_job(job: JobCreate):
 
     return new_job
 
+
 @router.get("/", response_model=list[JobResponse])
-async def get_jobs():
-    return jobs
+async def get_jobs(
+    remote: bool | None = None,
+    min_salary: Annotated[float | None, Query(gt=0)] = None,
+    position: Annotated[str | None, Query(min_length=2)] = None,
+):
+    filtered_jobs = jobs
+
+    if remote is not None:
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if job.remote == remote
+        ]
+
+    if min_salary is not None:
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if job.salary is not None and job.salary >= min_salary
+        ]
+
+    if position is not None:
+        filtered_jobs = [
+            job for job in filtered_jobs
+            if position.lower() in job.position.lower()
+        ]
+
+    return filtered_jobs
+
 
 @router.get("/{job_id}", response_model=JobResponse)
 async def get_job(job_id: int):
