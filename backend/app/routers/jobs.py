@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.schemas.job import JobCreate, JobResponse
+from app.schemas.job import JobCreate, JobResponse, JobUpdate
 
 
 router = APIRouter(
@@ -60,6 +60,23 @@ async def get_job(job_id: int):
     for job in jobs:
         if job.id == job_id:
             return job
+
+    raise HTTPException(
+        status_code=404,
+        detail="Job not found",
+    )
+    
+@router.patch("/{job_id}", response_model=JobResponse)
+async def update_job(job_id: int, job_update: JobUpdate):
+    for index, job in enumerate(jobs):
+        if job.id == job_id:
+            update_data = job_update.model_dump(exclude_unset=True)
+
+            updated_job = job.model_copy(update=update_data)
+
+            jobs[index] = updated_job
+
+            return updated_job
 
     raise HTTPException(
         status_code=404,
