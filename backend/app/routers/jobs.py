@@ -1,7 +1,11 @@
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.db.database import get_db
+from app.models.job import Job
 from app.schemas.job import JobCreate, JobResponse, JobUpdate
 
 
@@ -11,86 +15,100 @@ router = APIRouter(
 )
 
 
-jobs: list[JobResponse] = []
-
-
 @router.post("/", response_model=JobResponse, status_code=201)
-async def create_job(job: JobCreate):
-    new_job = JobResponse(
-        id=len(jobs) + 1,
-        **job.model_dump(),
-    )
+async def create_job(
+    job: JobCreate,
+    db: Annotated[Session, Depends(get_db)],
+):
+    db_job = Job(**job.model_dump())
 
-    jobs.append(new_job)
+    db.add(db_job)
+    db.commit()
+    db.refresh(db_job)
 
-    return new_job
+    return db_job
 
 
 @router.get("/", response_model=list[JobResponse])
 async def get_jobs(
+    db: Annotated[Session, Depends(get_db)],
     remote: bool | None = None,
     min_salary: Annotated[float | None, Query(gt=0)] = None,
     position: Annotated[str | None, Query(min_length=2)] = None,
 ):
-    filtered_jobs = jobs
+    statement = select(Job)
 
     if remote is not None:
-        filtered_jobs = [
-            job for job in filtered_jobs
-            if job.remote == remote
-        ]
+        statement = statement.where(Job.remote == remote)
 
     if min_salary is not None:
-        filtered_jobs = [
-            job for job in filtered_jobs
-            if job.salary is not None and job.salary >= min_salary
-        ]
+        statement = statement.where(Job.salary >= min_salary)
 
     if position is not None:
-        filtered_jobs = [
-            job for job in filtered_jobs
-            if position.lower() in job.position.lower()
-        ]
+        statement = statement.where(
+            Job.position.ilike(f"%{position}%")
+        )
 
-    return filtered_jobs
+    jobs = db.scalars(statement).all()
+
+    return jobs
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-async def get_job(job_id: int):
-    for job in jobs:
-        if job.id == job_id:
-            return job
+async def get_job(
+    job_id: int,
+    db: Annotated[Session, Depends(get_db)],
+):
+    job = db.get(Job, job_id)
 
-    raise HTTPException(
-        status_code=404,
-        detail="Job not found",
-    )
-    
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
+
+    return job
+
+
 @router.patch("/{job_id}", response_model=JobResponse)
-async def update_job(job_id: int, job_update: JobUpdate):
-    for index, job in enumerate(jobs):
-        if job.id == job_id:
-            update_data = job_update.model_dump(exclude_unset=True)
+async def update_job(
+    job_id: int,
+    job_update: JobUpdate,
+    db: Annotated[Session, Depends(get_db)],
+):
+    job = db.get(Job, job_id)
 
-            updated_job = job.model_copy(update=update_data)
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
 
-            jobs[index] = updated_job
+    update_data = job_update.model_dump(exclude_unset=True)
 
-            return updated_job
+    for field, value in update_data.items():
+        setattr(job, field, value)
 
-    raise HTTPException(
-        status_code=404,
-        detail="Job not found",
-    )
-    
+    db.commit()
+    db.refresh(job)
+
+    return job
+
+
 @router.delete("/{job_id}", status_code=204)
-async def delete_job(job_id: int):
-    for index, job in enumerate(jobs):
-        if job.id == job_id:
-            jobs.pop(index)
-            return
+async def delete_job(
+    job_id: int,
+    db: Annotated[Session, Depends(get_db)],
+):
+    job = db.get(Job, job_id)
 
-    raise HTTPException(
-        status_code=404,
-        detail="Job not found",
-    )
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found",
+        )
+
+    db.delete(job)
+    db.commit()
+
+    return Response(status_code=204)
